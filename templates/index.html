@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>S3 File Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { padding: 2rem; }
+    .file-actions a { margin-right: 8px; }
+    #credPopup {
+      display: none;
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.2);
+      z-index: 2000;
+      width: 400px;
+    }
+    #credOverlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="mb-4">☁️ S3 File Manager</h1>
+
+    <div class="d-flex justify-content-between mb-3">
+      <div>
+        <button class="btn btn-secondary" onclick="openPopup()">⚙ Configure Credentials</button>
+        <button class="btn btn-primary" onclick="listFiles()">🔄 Refresh</button>
+        <button class="btn btn-outline-success" onclick="makeDir()">📂 New Folder</button>
+        <button class="btn btn-outline-info" onclick="createBucket()">🗄️ New Bucket</button>
+      </div>
+      <form id="uploadForm" class="d-flex">
+        <input type="file" name="file" class="form-control me-2" required>
+        <button type="submit" class="btn btn-success" style="width:200px;">⬆ Upload</button>
+      </form>
+    </div>
+
+    <table class="table table-striped">
+    <thead class="table-dark">
+        <tr>
+            <th scope="col">Filename</th>
+            <th scope="col" class="text-end">Size</th>
+            <th scope="col" class="text-end">Last Modified</th>
+            <th scope="col" class="text-end">Actions</th>
+        </tr>
+    </thead>
+    <tbody id="fileList">
+        <tr><td colspan="3">Loading...</td></tr>
+    </tbody>
+    </table>
+
+  <!-- Overlay + Popup -->
+  <div id="credOverlay"></div>
+  <div id="credPopup">
+    <h4 class="mb-3">🔑 S3 Credentials</h4>
+    <div class="mb-2">
+      <label class="form-label">Access Key</label>
+      <input id="accessKey" class="form-control">
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Secret Key</label>
+      <input id="secretKey" type="password" class="form-control">
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Bucket</label>
+      <input id="bucket" class="form-control">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Endpoint URL</label>
+      <input id="endpoint" placeholder="https://s3.us-west-004.backblazeb2.com" class="form-control">
+    </div>
+    <div class="d-flex justify-content-end">
+      <button class="btn btn-secondary me-2" onclick="closePopup()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCreds()">Save</button>
+    </div>
+  </div>
+
+  <script>
+    function openPopup() {
+      document.getElementById("credOverlay").style.display = "block";
+      document.getElementById("credPopup").style.display = "block";
+      // prefill if available
+      document.getElementById("accessKey").value = localStorage.getItem("s3AccessKey") || "";
+      document.getElementById("secretKey").value = localStorage.getItem("s3SecretKey") || "";
+      document.getElementById("bucket").value = localStorage.getItem("s3Bucket") || "";
+      document.getElementById("endpoint").value = localStorage.getItem("s3Endpoint") || "";
+    }
+    function closePopup() {
+      document.getElementById("credOverlay").style.display = "none";
+      document.getElementById("credPopup").style.display = "none";
+    }
+    function saveCreds() {
+      localStorage.setItem("s3AccessKey", document.getElementById("accessKey").value);
+      localStorage.setItem("s3SecretKey", document.getElementById("secretKey").value);
+      localStorage.setItem("s3Bucket", document.getElementById("bucket").value);
+      localStorage.setItem("s3Endpoint", document.getElementById("endpoint").value);
+      closePopup();
+      listFiles();
+    }
+    function getHeaders() {
+    return {
+        "X-S3AccessKey": localStorage.getItem("s3AccessKey") || "",
+        "X-S3SecretKey": localStorage.getItem("s3SecretKey") || "",
+        "X-S3Bucket": localStorage.getItem("s3Bucket") || "",
+        "X-S3Endpoint": localStorage.getItem("s3Endpoint") || ""
+    };
+    }
+
+    function formatSize(bytes) {
+    if (bytes === 0) return "0 B";
+
+    const k = 1024;
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const index = Math.min(i, units.length - 1);
+
+    const value = bytes / Math.pow(k, index);
+    return (value % 1 === 0 ? value : value.toFixed(1)) + " " + units[index];
+    }
+
+    async function listFiles() {
+    let res = await fetch("/list", { headers: getHeaders() });
+    let data = await res.json();
+    let tbody = document.getElementById("fileList");
+    tbody.innerHTML = "";
+
+    if (Array.isArray(data)) {
+        if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3">No files in bucket</td></tr>`;
+        } else {
+        data.forEach(item => {
+        let row = document.createElement("tr");
+        if (item.Key) {
+            row.innerHTML = `
+                <td>${item.Key}</td>
+                <td class="text-end">${formatSize(item.Size)}</td>
+                <td class="text-end">${item.LastModified ? new Date(item.LastModified).toLocaleString() : "-"}</td>
+                <td class="text-end file-actions">
+                <button class="btn btn-sm btn-outline-primary" onclick="doDownload('${item.Key}')">⬇ Download</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('${item.Key}')">🗑 Delete</button>
+                </td>`;
+        } else if (item.Name) {
+            row.innerHTML = `
+                <td>${item.Name}</td>
+                <td class="text-end">-</td>
+                <td class="text-end">${item.CreationDate ? new Date(item.CreationDate).toLocaleString() : "-"}</td>
+                <td class="text-end file-actions">
+                    -
+                </td>`;
+        }
+        tbody.appendChild(row);
+        });}}
+    else {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-danger">Error: ${data.error}</td></tr>`;
+    }
+    }
+
+    async function doDownload(key) {
+    let res = await fetch(`/download/${encodeURIComponent(key)}`, {
+        headers: getHeaders()
+    });
+    let data = await res.json();
+    if (data.url) {
+        // open Backblaze presigned URL directly in new tab
+        window.open(data.url, "_blank");
+    } else {
+        alert("Download failed: " + (data.error || "Unknown error"));
+    }
+    }
+
+    async function deleteFile(name) {
+      if (!confirm(`Delete ${name}?`)) return;
+      await fetch(`/delete/${name}`, { method: "DELETE", headers: getHeaders() });
+      listFiles();
+    }
+
+    async function makeDir() {
+        const name = prompt("Enter new folder name:");
+        if (!name) return;
+
+        let res = await fetch("/mkdir", {
+            method: "POST",
+            headers: {
+            ...getHeaders(),
+            "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ name })
+        });
+
+        let data = await res.json();
+        if (data.error) {
+            alert("Error: " + data.error);
+        } else {
+            listFiles();
+        }
+    }
+
+    async function createBucket() {
+        const name = prompt("Enter new bucket name:");
+        if (!name) return;
+
+        let res = await fetch("/create_bucket", {
+            method: "POST",
+            headers: {
+            ...getHeaders(),
+            "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ name })
+        });
+
+        let data = await res.json();
+        if (data.error) {
+            alert("Error: " + data.error);
+        } else {
+            listFiles();
+        }
+    }
+
+    document.getElementById("uploadForm").onsubmit = async function(e) {
+      e.preventDefault();
+      let file = e.target.file.files[0];
+      let formData = new FormData();
+      formData.append("file", file);
+      await fetch("/upload", { method: "POST", body: formData, headers: getHeaders() });
+      e.target.reset();
+      listFiles();
+    };
+    window.onload = listFiles;
+  </script>
+</body>
+</html>
