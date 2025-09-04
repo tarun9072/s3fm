@@ -1,0 +1,58 @@
+name: Deploy with AWS Copilot (RDWS)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-west-1
+  COPILOT_APPLICATION: testing
+  COPILOT_SERVICE: app
+  COPILOT_ENV: app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # TODO: Replace with your IAM role ARN that trusts GitHub OIDC
+          role-to-assume: arn:aws:iam::943347376267:role/github-actions-copilot-deploy-role
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install Copilot CLI
+        run: |
+          COPILOT_VERSION=1.34.1
+          # Download the correct Linux x86_64 binary (GitHub-hosted asset name is 'copilot-linux')
+          curl -fLsS -o copilot-linux "https://github.com/aws/copilot-cli/releases/download/v${COPILOT_VERSION}/copilot-linux"
+          chmod +x copilot-linux
+          sudo install -m 0755 copilot-linux /usr/local/bin/copilot
+          copilot --version
+
+      - name: Deploy Request-Driven Web Service
+        run: |
+          TAG=${GITHUB_SHA::7}
+          copilot deploy \
+            --app "$COPILOT_APPLICATION" \
+            --name "$COPILOT_SERVICE" \
+            --env "$COPILOT_ENV" \
+            --tag "$TAG"
+
+      - name: Show service info
+        run: |
+          # 'svc show' does not take --env; it prints all envs. Then show env-specific status.
+          copilot svc show \
+            --app "$COPILOT_APPLICATION" \
+            --name "$COPILOT_SERVICE"
+          copilot svc status \
+            --app "$COPILOT_APPLICATION" \
+            --name "$COPILOT_SERVICE" \
+            --env "$COPILOT_ENV"

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Environments
+.venv/
+venv/
+
+# VCS
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Misc
+*.log
+.env
+node_modules/
+
