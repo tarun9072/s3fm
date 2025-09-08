@@ -14,7 +14,7 @@ services:
       - "5000:5000"
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "python", "-c", "import sys, urllib.request; urllib.request.urlopen('http://localhost:5000/health'); sys.exit(0)" ]
+      test: [ "CMD", "python", "-c", "import sys, urllib.request; urllib.request.urlopen('http://localhost:5000/'); sys.exit(0)" ]
       interval: 10s
       timeout: 3s
       retries: 5
